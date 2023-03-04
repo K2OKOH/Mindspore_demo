@@ -14,9 +14,9 @@ from mindspore import log as logger
 class_num = 10
 
 class CE_net(nn.Cell):
-    def __init__(self, G1_C_net, loss_fn, auto_prefix=False):
+    def __init__(self, net, loss_fn, auto_prefix=False):
         super(CE_net, self).__init__(auto_prefix=False)
-        self.net = G1_C_net
+        self.net = net
         self.loss_fn = loss_fn
 
     def construct(self, x, y):
@@ -43,7 +43,7 @@ class DANN_loss_net(nn.Cell):
         domain_s2 = self.ones(dom_s2.shape[0], mindspore.int64)
         loss_dc = self.loss_fn(dom_s1, domain_s1) + self.loss_fn(dom_s2, domain_s2)
 
-        loss = loss_cls + loss_dc
+        loss = loss_cls + 0.1 * loss_dc
 
         return loss
 
@@ -96,7 +96,7 @@ class MV3_loss_net(nn.Cell):
         dif13_s2 = self.mse_loss(cp1_s2, cp3_s2)
         loss_dif = dif12_s1 + dif12_s2 + dif23_s1 + dif23_s2 + dif13_s1 + dif13_s2
         # print(feat)
-        loss = loss_cls + 0.01 * (loss_dc + loss_rc + 0.1 * loss_dif)
+        loss = loss_cls + 0.1 * loss_dc + loss_rc - 0.01 * loss_dif
 
         return loss
 

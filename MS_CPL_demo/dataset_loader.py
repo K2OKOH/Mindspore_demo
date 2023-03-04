@@ -88,11 +88,11 @@ class DATA_LOADER(object):
 
     def read_matdataset(self, opt):
         #matcontent = sio.loadmat(opt.dataroot + "/" + opt.dataset + "/" + opt.image_embedding + ".mat")
-        matcontent = sio.loadmat('/media/cqu/D/SWL/TCN/datatsets/data_resnet2/CUB/res101.mat')
+        matcontent = sio.loadmat('./data/CUB1_data/res101.mat')
         feature = matcontent['features'].T
         label = matcontent['labels'].astype(int).squeeze() - 1
         #matcontent = sio.loadmat(opt.dataroot + "/" + opt.dataset + "/" + opt.class_embedding + "_splits.mat")
-        matcontent = sio.loadmat('/media/cqu/D/SWL/TCN/datatsets/data_resnet2/CUB/att_splits.mat')
+        matcontent = sio.loadmat('./data/CUB1_data/original_att_splits.mat')
         # numpy array index starts from 0, matlab starts from 1
         trainval_loc = matcontent['trainval_loc'].squeeze() - 1
         train_loc = matcontent['train_loc'].squeeze() - 1

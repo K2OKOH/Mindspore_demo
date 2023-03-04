@@ -9,23 +9,23 @@ from models import *
 from cell import *
 import sys
 import numpy as np
-from test_PACS import test
+from test_PACS_all_resnet import test
 import tqdm as tqdm
 from mindspore import context
 
 # ========================================================
 
-learning_rate=0.0002
+learning_rate=0.0001
 
 print('dataset loading')
 Photo_DataSet = mindspore.dataset.GeneratorDataset(MyDatasets(data_path = '../DataSet/PACS/photo'), column_names=["image", "label"])
 Photo_DataSet_s2 = mindspore.dataset.GeneratorDataset(MyDatasets(data_path = '../DataSet/PACS/photo_s2'), column_names=["image", "label"])
-data_train = Photo_DataSet.batch(128)
-data_train_s2 = Photo_DataSet_s2.batch(128)
+data_train = Photo_DataSet.batch(32)
+data_train_s2 = Photo_DataSet_s2.batch(32)
 print('load finished!')
 
 def train():
-    net = AlexNet_MV3(num_classes=7)
+    net = Resnet_MV3(num_classes=7)
 
     opt_net = nn.Adam(net.get_parameters(), learning_rate=learning_rate, weight_decay=0.0005)
     ce_loss = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
@@ -36,6 +36,7 @@ def train():
 
     for epoch in range(60):
         num = 0
+        loss_list = []
         for data in data_train.create_dict_iterator():
             num += 1
             img_s1 = data["image"]
@@ -45,14 +46,15 @@ def train():
             label_s2 = data_s2["label"]
 
             loss = train_network(img_s1, img_s2, label_s1, label_s2)
-            
+            loss_list.append(loss.asnumpy())
             # if (num%10 == 0):
             #     print(num)
             
-        print('Epoch:',epoch,'loss = ', loss.asnumpy())
+        mean_loss = sum(loss_list)/len(loss_list)
+        print('Epoch:',epoch,'loss = ', mean_loss)
         
         # 保存模型
-        save_model(net, './SaveModel/model_MV3_P.ckpt')
+        save_model(net, './SaveModel/res_MV3_P.ckpt')
         print('>> PACS_P 保存完成')
             
         test()

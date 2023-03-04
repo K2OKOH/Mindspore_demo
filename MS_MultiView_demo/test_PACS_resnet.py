@@ -19,9 +19,10 @@ def test():
     # print('>> load finished!')
 
     # 读取模型
-    net_test = AlexNet(num_classes=7)
+    # net_test = AlexNet(num_classes=7)
+    net_test = Resnet(num_classes=7)
 
-    net_dict = mindspore.load_checkpoint('./SaveModel/model_MV3_P.ckpt')
+    net_dict = mindspore.load_checkpoint('./SaveModel/res_DANN_P.ckpt')
     # for name, param in net_dict.items():
     #     if not name.startswith('optimizer.'):
     #         ms.load_param_into_net(net_test, net_dict)
@@ -58,7 +59,7 @@ def test():
         
     acc  = correct_number / all_picture
 
-    print("Accuracy is {:.2f}% {}/{}\n".format(acc, correct_number, all_picture))
+    print("Accuracy is {:.2f}% {}/{}\n".format(acc*100, correct_number, all_picture))
 
 if __name__ == "__main__":
     # 进行测试

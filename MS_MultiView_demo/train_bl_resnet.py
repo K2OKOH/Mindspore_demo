@@ -9,10 +9,11 @@ from cell import *
 import sys
 import os
 import numpy as np
-from test_PACS import test
+from test_PACS_resnet import test
 import tqdm as tqdm
 from PIL import Image
 import cv2
+from resnet import resnet50
 
 # ========================================================
 
@@ -20,20 +21,22 @@ learning_rate=0.0001
 
 print('dataset loading')
 Train_DataSet = mindspore.dataset.GeneratorDataset(MyDatasets(data_path = '../DataSet/PACS/photo'), column_names=["image", "label"])
-Train_DataSet = Train_DataSet.batch(256)
+Train_DataSet = Train_DataSet.batch(64)
 print('load finished!')
 
 def train():
-    net = AlexNet(num_classes=7)
+    # net = AlexNet(num_classes=7)
+    res_net = Resnet(num_classes=7)
 
-    opt_net = nn.Adam(net.get_parameters(), learning_rate=learning_rate)
+    opt_net = nn.Adam(res_net.get_parameters(), learning_rate=learning_rate)
     criterion = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
-    net_with_criterion = CE_net(net, criterion)
+    net_with_criterion = CE_net(res_net, criterion)
     train_network = TrainOneStepCell_PACS(net_with_criterion, opt_net)
     train_network.set_train()
 
     for epoch in range(60):
         num = 0
+        loss_list = []
         for data in Train_DataSet.create_dict_iterator():
             img_s = data["image"]
             label_s = data["label"]
@@ -58,8 +61,13 @@ def train():
             # sys.exit(0)
             '''
             loss = train_network(img_s, label_s)
+            loss_list.append(loss.asnumpy())
             
-        print('Epoch:',epoch,'loss = ', loss.asnumpy())
+            # if (num%10 == 0):
+            #     print(num)
+            
+        mean_loss = sum(loss_list)/len(loss_list)
+        print('Epoch:',epoch,'loss = ', mean_loss.asnumpy())
             # 测试数据迭代
         test_number = 0
         correct_number = 0
@@ -71,7 +79,7 @@ def train():
             img_T = data["image"]
             label_T = data["label"]
 
-            onehot_label = net(img_T)
+            onehot_label = res_net(img_T)
 
             pre_label = np.argmax(onehot_label, axis=1)
             # print("pre_label:", pre_label)
@@ -88,7 +96,7 @@ def train():
 
         print("Accuracy is {:.2f}% {}/{}\n".format(acc, correct_number, all_picture))
         # 保存模型
-        save_model(net, './SaveModel/model_PACS_P.ckpt')
+        save_model(res_net, './SaveModel/model_PACS_P.ckpt')
         print('>> PACS_P 保存完成')
 
         # test()

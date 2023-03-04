@@ -1,17 +1,13 @@
 # noinspection PyUnresolvedReferences
 import mindspore
 from mindspore import nn
+from mindspore import ops
 from mindspore.common.initializer import initializer, XavierUniform, Zero
+import mindspore.numpy as mnp
 
 rdc_text_dim = 1000
 z_dim = 100
 h_dim = 1024
-
-def weights_init():
-    return XavierUniform()
-
-def bias_init():
-    return Zero()
 
 class _param:
     def __init__(self):
@@ -46,3 +42,51 @@ class _RelationNet(nn.Cell):
         x = self.relu2(self.fc2(x))
         return x
 
+class Recon(nn.Cell):
+    def __init__(self, x_dim, y_dim):
+        super(Recon, self).__init__()
+        z_dim = 1024
+        self.fc = nn.Dense(x_dim, z_dim)
+        self.fc1 = nn.Dense(z_dim, y_dim)
+        self.relu = nn.ReLU()
+        self.Dropout = nn.Dropout(keep_prob=0.5)
+        self.Sigmoid = nn.Sigmoid()
+
+    def construct(self, x):
+        x = self.fc(x)
+        x = self.relu(x)
+        x = self.Dropout(x)
+
+        x = self.fc1(x)
+        x = self.Sigmoid(x)
+        return x
+
+# 现画网络结构图
+class All_Net(nn.Cell):
+    """docstring for RelationNetwork"""
+    def __init__(self, APnet, Rnet, Reconnet):
+        super(All_Net, self).__init__()
+        self.APnet = APnet
+        self.Rnet = Rnet
+        self.Reconnet = Reconnet
+
+        self.concat = ops.Concat()
+        self.unsqu = ops.ExpandDims()
+
+    def construct(self, batch_attr, att_batch_val, one_hot_labels, support_attr, batch_ext):
+        
+        semantic_proto = self.APnet(support_attr)
+        semantic_proto_batch = self.APnet(batch_attr)
+        semantic_proto_ext = self.unsqu(semantic_proto, 0)
+        semantic_proto_ext = mnp.tile(semantic_proto_ext, (one_hot_labels.shape[0], 1, 1))
+        
+        relation_pairs = semantic_proto_ext * batch_ext
+        relations = self.Rnet(relation_pairs)
+        
+        unseen_semantic_proto_batch = self.APnet(att_batch_val)
+
+        rec_sem = self.Reconnet(semantic_proto_batch)
+        rec_sem_unseen = self.Reconnet(unseen_semantic_proto_batch)
+        
+
+        return semantic_proto_batch, rec_sem, rec_sem_unseen, relations, unseen_semantic_proto_batch

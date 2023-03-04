@@ -30,23 +30,21 @@ class APnetWithLossCell(nn.Cell):
 
         return loss_G
 
-
 class RnetWithLossCell(nn.Cell):
-    def __init__(self, APnet, Rnet, loss_fn, class_num, train_class_num, lambda_3, auto_prefix=True):
+    def __init__(self, APnet, Rnet, loss_fn, class_num, train_class_num, auto_prefix=True):
+        # def __init__(self, APnet, Rnet, loss_fn, class_num, train_class_num, lambda_3, auto_prefix=True):
         super(RnetWithLossCell, self).__init__(auto_prefix=auto_prefix)
         self.APnet = APnet
         self.Rnet = Rnet
         self.loss_fn = loss_fn
         self.class_num = class_num
         self.train_class_num = train_class_num
-        self.lambda_3 = lambda_3
+        # self.lambda_3 = lambda_3
 
     def construct(self, support_attr, batch_ext, one_hot_labels, sim_labels):
         semantic_proto = self.APnet(support_attr)
         semantic_proto_ext = unsqu(semantic_proto, 0)
         semantic_proto_ext = mnp.tile(semantic_proto_ext, (one_hot_labels.shape[0], 1, 1))
-        #print('aaaa')
-        #print(one_hot_labels.shape[0])
         
         relation_pairs = semantic_proto_ext * batch_ext
         relations = self.Rnet(relation_pairs).view(-1, self.class_num)
@@ -55,7 +53,8 @@ class RnetWithLossCell(nn.Cell):
         
         loss1 = self.loss_fn(relation_train, one_hot_labels)
         loss2 = self.loss_fn(relation_test, sim_labels)
-        loss = loss1+self.lambda_3* loss2
+        # loss = loss1+self.lambda_3* loss2
+        loss = loss1 + 0.01* loss2
         return loss
         
 class ReconnetWithLossCell(nn.Cell):
@@ -71,7 +70,35 @@ class ReconnetWithLossCell(nn.Cell):
         loss_D = self.loss_fn(sigmoid(att_fake), sigmoid(att_real))
         return loss_D
 
+class AllNetWithLossCell(nn.Cell):
+    def __init__(self, all_net, loss_bce, loss_mse, class_num, train_class_num, auto_prefix=True):
+        super(AllNetWithLossCell, self).__init__(auto_prefix=auto_prefix)
+        self.all_net = all_net
+        self.loss_bce = loss_bce
+        self.loss_mse = loss_mse
+        self.class_num = class_num
+        self.train_class_num = train_class_num
 
+    def construct(self, batch_images, batch_atts, visual_batch_val, att_batch_val, support_attr, batch_ext, one_hot_labels, sim_labels):
+
+        semantic_proto_batch, rec_sem, rec_sem_unseen, relations, unseen_semantic_proto_batch \
+            = self.all_net(batch_atts, att_batch_val, one_hot_labels, support_attr, batch_ext)
+        
+        relations = relations.view(-1, self.class_num)
+        relation_train = relations[:, :self.train_class_num]
+        relation_test = relations[:, self.train_class_num:]
+        
+        loss1 = self.loss_bce(relation_train, one_hot_labels)
+        loss2 = self.loss_bce(relation_test, sim_labels)
+        loss3 = self.loss_mse(sigmoid(semantic_proto_batch), sigmoid(batch_images))
+        loss4 = self.loss_mse(sigmoid(rec_sem), sigmoid(batch_atts))
+        loss5 = self.loss_mse(sigmoid(unseen_semantic_proto_batch), sigmoid(visual_batch_val))
+        loss6 = self.loss_mse(sigmoid(rec_sem_unseen), sigmoid(att_batch_val))
+        loss = loss1 + 0.001 * loss2+ 0.1 * loss3+ 0.1 * loss5 + 0.1 * loss4 + 0.1 * loss6
+        
+        return loss
+
+'''
 class TrainOneStepCell(nn.Cell):
     def __init__(
         self,
@@ -143,7 +170,8 @@ class TrainOneStepCell(nn.Cell):
         grads = grad_reducer(grads)
         return F.depend(loss, optimizer(grads))
 
-    def construct(self, lambda_1, lambda_2, lambda_3, batch_images, batch_atts, visual_batch_val, att_batch_val, one_hot_labels, sim_labels, support_attr, batch_ext):
+    # def construct(self, lambda_1, lambda_2, lambda_3, batch_images, batch_atts, visual_batch_val, att_batch_val, one_hot_labels, sim_labels, support_attr, batch_ext):
+    def construct(self, batch_images, batch_atts, visual_batch_val, att_batch_val, one_hot_labels, sim_labels, support_attr, batch_ext):
         #loss3 = self.APnet(batch_atts, batch_images)
         #loss5 = self.APnet(att_batch_val, visual_batch_val)
         
@@ -156,18 +184,14 @@ class TrainOneStepCell(nn.Cell):
         #loss2 = self.Rnet(support_attr, batch_ext, sim_labels)
         loss1 = self.Rnet(support_attr, batch_ext, one_hot_labels, sim_labels)
         
-        
-        
         #loss4 = self.Reconnet(batch_atts)
         #loss7 = self.Reconnet(att_batch_val)
         
         loss47 = self.Reconnet(att)
         
-        
-      
         #loss = loss1 + lambda_1*loss3+  lambda_1*loss5 + lambda_2*loss4 + lambda_2*loss7
-        loss = loss1 + lambda_1*loss35+  lambda_2*loss47 
-
+        # loss = loss1 + lambda_1*loss35+  lambda_2*loss47 
+        loss = loss1 + 0.1*loss35+  0.1*loss47 
 
         out1 = self.trainAPnet(att, vis, loss, self.APnet,
                             self.grad, self.optimizerAPnet, self.weights_APnet,
@@ -179,4 +203,46 @@ class TrainOneStepCell(nn.Cell):
                             self.optimizerRR, self.weights_Reconnet,
                             self.grad_reducer_Reconnet)
 
+        # 反向传播的缩放系数
+        # sens = P.Fill()(P.DType()(loss), P.Shape()(loss), self.sens)
+        # grads = self.grad(self.net_loss, self.weights)(x1, x2, y1, y2, sens)
+        # grads = self.grad_reducer(grads)
+        # loss = F.depend(loss, self.optimizer(grads))
+
         return loss, out1, out2, out3
+'''
+
+class TrainOneStepCell(nn.Cell):
+    def __init__(
+        self,
+        all_net_with_loss,
+        optimizer: nn.Optimizer,
+        sens=1.0,
+        auto_prefix=True,
+    ):
+        super(TrainOneStepCell, self).__init__(auto_prefix=auto_prefix)
+        self.net = all_net_with_loss
+        self.net.set_grad()
+        # self.net.add_flags(defer_inline=True)
+
+        self.optimizer = optimizer
+        self.weights = self.optimizer.parameters
+
+        self.grad = C.GradOperation(get_by_list=True, sens_param=True)
+
+        self.sens = sens
+        self.reducer_flag = False
+        self.grad_reducer = F.identity
+
+    def construct(self, batch_images, batch_atts, visual_batch_val, att_batch_val, one_hot_labels, sim_labels, support_attr, batch_ext):
+
+        loss = self.net(batch_images, batch_atts, visual_batch_val, att_batch_val, support_attr, batch_ext, one_hot_labels, sim_labels)
+
+        # 反向传播的缩放系数
+        sens = P.Fill()(P.DType()(loss), P.Shape()(loss), self.sens)
+        grads = self.grad(self.net, self.weights)(batch_images, batch_atts, visual_batch_val, att_batch_val, support_attr, batch_ext, one_hot_labels, sim_labels, sens)
+        grads = self.grad_reducer(grads)
+        loss = F.depend(loss, self.optimizer(grads))
+
+        # return loss, out1, out2, out3
+        return loss
