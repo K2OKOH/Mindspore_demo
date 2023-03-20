@@ -23,7 +23,7 @@ import numpy as np
 from pycocotools.cocoeval import COCOeval
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-# import seaborn as sns
+import seaborn as sns
 
 
 plt.switch_backend('agg')

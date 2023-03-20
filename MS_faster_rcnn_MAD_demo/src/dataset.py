@@ -384,6 +384,156 @@ def preprocess_fn(image, box, is_training, config):
 
     return _data_aug(image, box, is_training)
 
+def preprocess_fn_s2(image, box, is_training, config):
+    """Preprocess function for dataset."""
+
+    def _infer_data(image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert):
+        image_shape = image_shape[:2]
+        input_data = image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert
+
+        if config.keep_ratio:
+            input_data = rescale_column_test(*input_data, config=config)
+        else:
+            input_data = resize_column_test(*input_data, config=config)
+        input_data = imnormalize_column(*input_data)
+
+        output_data = transpose_column(*input_data)
+        return output_data
+
+    def FreCom(img):
+        h,w = img.shape[:2]
+        img_dct = np.zeros((h,w,3))
+        for i in range(3):
+            img_ = img[:, :, i] # 获取rgb通道中的一个
+            img_ = np.float32(img_) # 将数值精度调整为32位浮点型
+            img_dct[:,:,i] = cv2.dct(img_)  # 使用dct获得img的频域图像
+
+        return img_dct
+
+    def Matching(img,reference,alpha=0.2,beta=1):
+        theta = np.random.uniform(alpha, beta)
+        h, w = img.shape[:2]
+        img_dct=FreCom(img)
+        r = np.random.randint(1,5)
+        # r = 1
+        img_dct[r,r,:]=0
+        ref_dct=FreCom(reference)
+        # img_fc = img_dct * theta + ref_dct
+        img_fc = img_dct + ref_dct * theta
+        img_out = np.zeros((h, w, 3))
+        #img_out = np.uint8(np.clip(np.fft.ifft2(img_fc, axes=(0, 1)),0,255))
+        for i in range(3):
+            img_ = img_fc[:, :, i]  # 获取rgb通道中的一个
+            img_out[:, :, i] = cv2.idct(img_).clip(0,255)  # 使用dct获得img的频域图像
+
+        return img_out
+
+    def SCG(img,reference,alpha=0.2,beta=1):
+        #lam = np.random.uniform(alpha, beta)
+        theta = np.random.uniform(alpha, beta)
+        h, w = img.shape[:2]
+        img_dct=FreCom(img)
+        r = np.random.randint(1,5)
+        # r = 1
+        # mask = [x/100 for x in range(95)] + [0.95]*904 + [1 - x/100 for x in range(6,31)]
+        mask = np.zeros((h,w,3))
+        v1 = int(min(h,w) * 0.005)
+        v2 = int(min(h,w) * 0.7)
+        v3 = min(h,w)
+        for x in range(h):
+            for y in range(w):
+                if (max(x, y) <= v1):
+                    if (v1*0.95 != 0):
+                        mask[x][y] = 1 - max(x,y)/v1*0.95
+                elif (v1 < max(x,y) <= v2):
+                    mask[x][y] = 0.01
+                elif (v2 <= max(x,y) <= v3):
+                    if ((v3-v2)*0.3 != 0):
+                        mask[x][y] = (max(x,y) - v2)/(v3-v2)*0.3
+                else:
+                    mask[x][y] = 0.5
+        n_mask = 1 - mask
+        # print(mask)
+        # img_dct[r,r,:]=0
+        l_img_dct = img_dct * mask
+        h_img_dct = img_dct * n_mask
+        # print(img_dct.shape)
+        ref_dct=FreCom(reference)
+
+        ref_dct *= mask
+
+        ref_dct[:,:,0] = l_img_dct[:,:,0]*(1+np.random.randn())
+        ref_dct[:,:,1] = l_img_dct[:,:,1]*(1+np.random.randn())
+        ref_dct[:,:,2] = l_img_dct[:,:,2]*(1+np.random.randn())
+        
+        # img_fc = img_dct * theta + ref_dct
+        # img_fc = img_dct + ref_dct * theta
+        # img_fc = img_dct# + ref_dct * theta
+        img_fc = ref_dct + h_img_dct
+        # img_fc = ref_dct
+        img_out = np.zeros((h, w, 3))
+        #img_out = np.uint8(np.clip(np.fft.ifft2(img_fc, axes=(0, 1)),0,255))
+        for i in range(3):
+            img_ = img_fc[:, :, i]  # 获取rgb通道中的一个
+            img_out[:, :, i] = cv2.idct(img_).clip(0,255)  # 使用dct获得img的频域图像
+
+        return img_out
+
+    def _data_aug(image, box, is_training):
+        """Data augmentation function."""
+        pad_max_number = config.num_gts
+        if pad_max_number < box.shape[0]:
+            box = box[:pad_max_number, :]
+        
+        '''SCG'''
+        h1, w1 = image.shape[:2]
+        # 如果 长宽 不是偶数 -> 缩放成偶数
+        if h1%2!=0 or w1%2!=0:
+            image=cv2.resize(image,(w1-w1%2,h1-h1%2),interpolation=cv2.INTER_AREA)
+
+        refrence=np.ones_like(image)
+        # 参考图片随机色彩 (三个通道分别随机化)
+        refrence[:,:,0] = refrence[:,:,0]*np.random.randint(0,255)
+        refrence[:,:,1] = refrence[:,:,1]*np.random.randint(0,255)
+        refrence[:,:,2] = refrence[:,:,2]*np.random.randint(0,255)
+        image = SCG(image,refrence)
+        '''SCG end'''
+
+        image_bgr = image.copy()
+        image_bgr[:, :, 0] = image[:, :, 2]
+        image_bgr[:, :, 1] = image[:, :, 1]
+        image_bgr[:, :, 2] = image[:, :, 0]
+        image_shape = image_bgr.shape[:2]
+        gt_box = box[:, :4]
+        gt_label = box[:, 4]
+        gt_iscrowd = box[:, 5]
+
+        gt_box_new = np.pad(gt_box, ((0, pad_max_number - box.shape[0]), (0, 0)), mode="constant", constant_values=0)
+        gt_label_new = np.pad(gt_label, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=-1)
+        gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=1)
+        gt_iscrowd_new_revert = (~(gt_iscrowd_new.astype(np.bool))).astype(np.int32)
+
+        if not is_training:
+            return _infer_data(image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert)
+
+        flip = (np.random.rand() < config.flip_ratio)
+        expand = (np.random.rand() < config.expand_ratio)
+        input_data = image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert
+
+        if expand:
+            input_data = expand_column(*input_data)
+        if config.keep_ratio:
+            input_data = rescale_column(*input_data, config=config)
+        else:
+            input_data = resize_column(*input_data, config=config)
+        input_data = imnormalize_column(*input_data)
+        if flip:
+            input_data = flip_column(*input_data)
+
+        output_data = transpose_column(*input_data)
+        return output_data
+
+    return _data_aug(image, box, is_training)
 
 def create_coco_label(is_training, config):
     """Get image path and annotation from COCO."""
@@ -567,6 +717,33 @@ def create_fasterrcnn_dataset(config, mindrecord_file, batch_size=2, device_num=
         ds = ds.map(input_columns=["image", "annotation"],
                     output_columns=["image", "image_shape", "box", "label", "valid_num"],
                     column_order=["image", "image_shape", "box", "label", "valid_num"],
+                    operations=compose_map_func,
+                    num_parallel_workers=num_parallel_workers)
+        ds = ds.batch(batch_size, drop_remainder=True)
+    return ds
+
+def create_fasterrcnn_dataset_s2(config, mindrecord_file, batch_size=2, device_num=1, rank_id=0, is_training=True,
+                              num_parallel_workers=8, python_multiprocessing=False):
+    """Create FasterRcnn dataset with MindDataset."""
+    cv2.setNumThreads(0)
+    de.config.set_prefetch_size(8)
+    ds = de.MindDataset(mindrecord_file, columns_list=["image", "annotation"], num_shards=device_num, shard_id=rank_id,
+                        num_parallel_workers=4, shuffle=is_training)
+    decode = ms.dataset.vision.c_transforms.Decode()
+    ds = ds.map(input_columns=["image"], operations=decode)
+    compose_map_func = (lambda image, annotation: preprocess_fn_s2(image, annotation, is_training, config=config))
+
+    if is_training:
+        ds = ds.map(input_columns=["image", "annotation"],
+                    output_columns=["image_s2", "image_shape_s2", "box_s2", "label_s2", "valid_num_s2"],
+                    column_order=["image_s2", "image_shape_s2", "box_s2", "label_s2", "valid_num_s2"],
+                    operations=compose_map_func, python_multiprocessing=python_multiprocessing,
+                    num_parallel_workers=num_parallel_workers)
+        ds = ds.batch(batch_size, drop_remainder=True)
+    else:
+        ds = ds.map(input_columns=["image", "annotation"],
+                    output_columns=["image_s2", "image_shape_s2", "box_s2", "label_s2", "valid_num_s2"],
+                    column_order=["image_s2", "image_shape_s2", "box_s2", "label_s2", "valid_num_s2"],
                     operations=compose_map_func,
                     num_parallel_workers=num_parallel_workers)
         ds = ds.batch(batch_size, drop_remainder=True)

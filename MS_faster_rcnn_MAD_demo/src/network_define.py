@@ -113,8 +113,8 @@ class WithLossCell(nn.Cell):
         self._backbone = backbone
         self._loss_fn = loss_fn
 
-    def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num):
-        loss1, loss2, loss3, loss4, loss5, loss6 = self._backbone(x, img_shape, gt_bboxe, gt_label, gt_num)
+    def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num, x_s2, img_shape_s2, gt_bboxe_s2, gt_label_s2, gt_num_s2):
+        loss1, loss2, loss3, loss4, loss5, loss6 = self._backbone(x, img_shape, gt_bboxe, gt_label, gt_num, x_s2, img_shape_s2, gt_bboxe_s2, gt_label_s2, gt_num_s2)
         return self._loss_fn(loss1, loss2, loss3, loss4, loss5, loss6)
 
     @property
@@ -157,10 +157,10 @@ class TrainOneStepCell(nn.Cell):
         if reduce_flag:
             self.grad_reducer = DistributedGradReducer(optimizer.parameters, mean, degree)
 
-    def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num):
+    def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num, x_s2, img_shape_s2, gt_bboxe_s2, gt_label_s2, gt_num_s2):
         weights = self.weights
-        loss = self.network(x, img_shape, gt_bboxe, gt_label, gt_num)
-        grads = self.grad(self.network, weights)(x, img_shape, gt_bboxe, gt_label, gt_num, self.sens)
+        loss = self.network(x, img_shape, gt_bboxe, gt_label, gt_num, x_s2, img_shape_s2, gt_bboxe_s2, gt_label_s2, gt_num_s2)
+        grads = self.grad(self.network, weights)(x, img_shape, gt_bboxe, gt_label, gt_num, x_s2, img_shape_s2, gt_bboxe_s2, gt_label_s2, gt_num_s2, self.sens)
         if self.reduce_flag:
             grads = self.grad_reducer(grads)
 

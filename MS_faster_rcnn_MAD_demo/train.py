@@ -31,12 +31,12 @@ from mindspore.train.callback import SummaryCollector
 from src.FasterRcnn.faster_rcnn import Faster_Rcnn
 from src.FasterRcnn.faster_rcnn_MVC import Faster_Rcnn
 from src.network_define import LossCallBack, WithLossCell, TrainOneStepCell, LossNet
-from src.dataset import data_to_mindrecord_byte_image, create_fasterrcnn_dataset
+from src.dataset import data_to_mindrecord_byte_image, create_fasterrcnn_dataset, create_fasterrcnn_dataset_s2
 from src.lr_schedule import dynamic_lr, multistep_lr
 from src.model_utils.config import config
 from src.model_utils.moxing_adapter import moxing_wrapper
 from src.model_utils.device_adapter import get_device_id
-
+import mindspore.dataset as ds
 
 def train_fasterrcnn_():
     """ train_fasterrcnn_ """
@@ -79,15 +79,26 @@ def train_fasterrcnn_():
     print("CHECKING MINDRECORD FILES DONE!")
 
     # When create MindDataset, using the fitst mindrecord file, such as FasterRcnn.mindrecord0.
-    dataset = create_fasterrcnn_dataset(config, mindrecord_file, batch_size=config.batch_size,
+    dataset1 = create_fasterrcnn_dataset(config, mindrecord_file, batch_size=config.batch_size,
                                         device_num=device_num, rank_id=rank,
                                         num_parallel_workers=config.num_parallel_workers,
                                         python_multiprocessing=config.python_multiprocessing)
 
-    dataset_size = dataset.get_dataset_size()
+    # dataset_size = dataset.get_dataset_size()
+    dataset2 = create_fasterrcnn_dataset_s2(config, mindrecord_file, batch_size=config.batch_size,
+                                        device_num=device_num, rank_id=rank,
+                                        num_parallel_workers=config.num_parallel_workers,
+                                        python_multiprocessing=config.python_multiprocessing)
+    
+    # 合并两个数据集
+    # print(dataset1.get_col_names(), dataset2.get_col_names())
+    combined_dataset = ds.zip((dataset1, dataset2))
+
+    dataset_size = combined_dataset.get_dataset_size()
+
     print("Create dataset done!")
 
-    return dataset_size, dataset
+    return dataset_size, combined_dataset
 
 
 def modelarts_pre_process():

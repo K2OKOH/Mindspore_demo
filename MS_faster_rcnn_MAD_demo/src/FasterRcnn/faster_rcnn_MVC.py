@@ -255,72 +255,9 @@ class Faster_Rcnn(nn.Cell):
         self.roi_align_index_tensor_s2 = Tensor(np.concatenate(roi_align_index_s2))
         self.roi_align_index_test_tensor_s1 = Tensor(np.concatenate(roi_align_index_test_s1))
         self.roi_align_index_test_tensor_s2 = Tensor(np.concatenate(roi_align_index_test_s2))
-        
-    def FreCom(self, img):
-        h,w = img.shape[:2]
-        img_dct = np.zeros((h,w,3))
-        
-        # for i in range(3):
-        #     img_ = img[:, :, i] # 获取rgb通道中的一个
-        #     img_ = np.float32(img_) # 将数值精度调整为32位浮点型
-        #     img_dct[:,:,i] = cv2.dct(img_)  # 使用dct获得img的频域图像
-            
-            # dct_coeffs = np.zeros_like(img)
-        for c in range(img_dct.shape[2]):
-            for h in range(img_dct.shape[0]):
-                for w in range(img_dct.shape[1]):
-                    img_dct[h, w, c] = np.sum(img[:, :, c] * np.cos(np.pi / img_dct.shape[0] * (h + 0.5) * np.arange(img_dct.shape[0]))[:, None] * np.cos(np.pi / img_dct.shape[1] * (w + 0.5) * np.arange(img_dct.shape[1]))[None, :])
 
-
-        return img_dct
-
-    def Matching(self, img, reference, alpha=0.2,beta=1):
-        theta = np.random.uniform(alpha, beta)
-        h, w = img.shape[:2]
-        img_dct=self.FreCom(img)
-        r = np.random.randint(1,5)
-        img_dct[r,r,:]=0
-        ref_dct=self.FreCom(reference)
-        img_fc = img_dct + ref_dct * theta
-        img_out = np.zeros((h, w, 3))
-        
-        for c in range(img_out.shape[2]):
-            for h in range(img_out.shape[0]):
-                for w in range(img_out.shape[1]):
-                    img_out[h, w, c] = np.sum(img_fc[:, :, c] * np.cos(np.pi / img_out.shape[0] * (h + 0.5) * np.arange(img_out.shape[0]))[:, None] * np.cos(np.pi / img_out.shape[1] * (w + 0.5) * np.arange(img_out.shape[1]))[None, :])
-
-        # for i in range(3):
-        #     img_ = img_fc[:, :, i]  # 获取rgb通道中的一个
-        #     img_out[:, :, i] = cv2.idct(img_).clip(0,255)  # 使用dct获得img的频域图像
-
-        return img_out
-        
-    def generate(self, img):
-        image = img[0].asnumpy()
-        h1, w1 = image.shape[:2]
-        if (w1%2!=0 and h1%2!=0):
-            new_image = np.ones((h1-1,w1-1,3))
-            new_image = image[:h1-1,:w1-1,:]
-        if (h1%2!=0):
-            new_image = np.ones((h1-1,w1,3))
-            new_image = image[:h1-1,:,:]
-        if (w1%2!=0):
-            new_image = np.ones((h1,w1-1,3))
-            new_image = image[:,:w1-1,:]
-            # resize_op = P.ResizeBilinear((w1-w1%2,h1-h1%2))
-            # image = resize_op(image)
-            # image = ops.interpolate(image, None, None, (w1-w1%2, h1-h1%2), "asymmetric", "bilinear").asnumpy()
-            # img=cv2.resize(img,(w1-w1%2,h1-h1%2),interpolation=cv2.INTER_AREA)
-
-        refrence = np.ones_like(new_image)
-        refrence[:,:,0] = refrence[:,:,0]*np.random.randint(0,255)
-        refrence[:,:,1] = refrence[:,:,1]*np.random.randint(0,255)
-        refrence[:,:,2] = refrence[:,:,2]*np.random.randint(0,255)
-        img_matched = self.Matching(new_image, refrence)
-        img[0] = ms.Tensor(img_matched)
-        return img
-
-    def construct(self, img_data, img_metas, gt_bboxes, gt_labels, gt_valids):
+    def construct(self, img_data,    img_metas,    gt_bboxes,    gt_labels,    gt_valids, \
+                        img_data_s2, img_metas_s2, gt_bboxes_s2, gt_labels_s2, gt_valids_s2):
         """
         construct the FasterRcnn Network.
 
@@ -336,7 +273,7 @@ class Faster_Rcnn(nn.Cell):
         """
         # add by xmj 图像增强
         # img_data_s2 = self.generate(img_data)
-        img_data_s2 = img_data
+        # img_data_s2 = img_data
 
         x_s1 = self.backbone(img_data)
         x_s2 = self.backbone(img_data_s2)
@@ -350,7 +287,7 @@ class Faster_Rcnn(nn.Cell):
         rpn_loss_s1, cls_score_s1, bbox_pred_s1, rpn_cls_loss_s1, rpn_reg_loss_s1, _ = self.rpn_with_loss(x_s1,
                     img_metas, self.anchor_list, gt_bboxes, self.gt_labels_stage1, gt_valids)
         rpn_loss_s2, cls_score_s2, bbox_pred_s2, rpn_cls_loss_s2, rpn_reg_loss_s2, _ = self.rpn_with_loss(x_s2,
-                    img_metas, self.anchor_list, gt_bboxes, self.gt_labels_stage1, gt_valids)
+                    img_metas_s2, self.anchor_list, gt_bboxes_s2, self.gt_labels_stage1, gt_valids_s2)
 
         if self.training:
             proposal_s1, proposal_mask_s1 = self.proposal_generator(cls_score_s1, bbox_pred_s1, self.anchor_list)
@@ -372,6 +309,8 @@ class Faster_Rcnn(nn.Cell):
         if self.training:
             gt_labels = self.cast(gt_labels, ms.int32)
             gt_valids = self.cast(gt_valids, ms.int32)
+            gt_labels_s2 = self.cast(gt_labels_s2, ms.int32)
+            gt_valids_s2 = self.cast(gt_valids_s2, ms.int32)
             for i in range(self.train_batch_size):
                 gt_bboxes_i = self.squeeze(gt_bboxes[i:i + 1:1, ::])
 
@@ -381,8 +320,17 @@ class Faster_Rcnn(nn.Cell):
                 gt_valids_i = self.squeeze(gt_valids[i:i + 1:1, ::])
                 gt_valids_i = self.cast(gt_valids_i, ms.bool_)
 
+
+                gt_bboxes_s2_i = self.squeeze(gt_bboxes_s2[i:i + 1:1, ::])
+
+                gt_labels_s2_i = self.squeeze(gt_labels_s2[i:i + 1:1, ::])
+                gt_labels_s2_i = self.cast(gt_labels_s2_i, ms.uint8)
+
+                gt_valids_s2_i = self.squeeze(gt_valids_s2[i:i + 1:1, ::])
+                gt_valids_s2_i = self.cast(gt_valids_s2_i, ms.bool_)
+
                 bboxes_s1, deltas_s1, labels_s1, mask_s1 = self.bbox_assigner_sampler_for_rcnn(gt_bboxes_i, gt_labels_i, proposal_mask_s1[i], proposal_s1[i][::, 0:4:1], gt_valids_i)
-                bboxes_s2, deltas_s2, labels_s2, mask_s2 = self.bbox_assigner_sampler_for_rcnn(gt_bboxes_i, gt_labels_i, proposal_mask_s2[i], proposal_s2[i][::, 0:4:1], gt_valids_i)
+                bboxes_s2, deltas_s2, labels_s2, mask_s2 = self.bbox_assigner_sampler_for_rcnn(gt_bboxes_s2_i, gt_labels_s2_i, proposal_mask_s2[i], proposal_s2[i][::, 0:4:1], gt_valids_s2_i)
 
                 bboxes_tuple_s1 += (bboxes_s1,)
                 deltas_tuple_s1 += (deltas_s1,)
